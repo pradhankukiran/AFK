@@ -49,3 +49,8 @@ services:
 
 volumes:
   pgdata:
+
+networks:
+  default:
+    name: afk_default
+    external: true
