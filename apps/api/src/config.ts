@@ -7,7 +7,7 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const isDist = __dirname.split(path.sep).includes('dist');
-const appRoot = path.resolve(__dirname, isDist ? '../../' : '../../../');
+const appRoot = path.resolve(__dirname, isDist ? '..' : '../../../');
 
 export const config = {
   nodeEnv: process.env.NODE_ENV || 'development',
