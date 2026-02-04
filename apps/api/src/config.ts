@@ -6,6 +6,8 @@ dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const isDist = __dirname.split(path.sep).includes('dist');
+const appRoot = path.resolve(__dirname, isDist ? '../../' : '../../../');
 
 export const config = {
   nodeEnv: process.env.NODE_ENV || 'development',
@@ -19,8 +21,8 @@ export const config = {
   tileZoomRange: process.env.TILE_ZOOM_RANGE || '14-22',
 
   // File paths
-  uploadsDir: path.resolve(__dirname, '../../../uploads'),
-  outputsDir: path.resolve(__dirname, '../../../outputs'),
+  uploadsDir: path.join(appRoot, 'uploads'),
+  outputsDir: path.join(appRoot, 'outputs'),
 
   // Upload limits
   maxFileSize: 100 * 1024 * 1024, // 100MB per file
