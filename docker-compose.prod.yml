@@ -1,0 +1,51 @@
+services:
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: afk-api
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgres://afk:${DB_PASSWORD}@db:5432/afk
+      - NODEODM_URL=${NODEODM_URL}
+      - API_PORT=4000
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./outputs:/app/outputs
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: postgis/postgis:15-3.3
+    container_name: afk-postgres
+    environment:
+      POSTGRES_USER: afk
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: afk
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./apps/api/src/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U afk -d afk"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    container_name: afk-web
+    ports:
+      - "80:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  pgdata:

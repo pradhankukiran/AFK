@@ -1,0 +1,31 @@
+{
+  "name": "afk",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AgriFieldKinematic - Drone orthomosaic processing and annotation tool for agricultural consultants",
+  "scripts": {
+    "dev": "pnpm -r --parallel dev",
+    "dev:api": "pnpm --filter @afk/api dev",
+    "dev:web": "pnpm --filter @afk/web dev",
+    "build": "pnpm -r build",
+    "build:api": "pnpm --filter @afk/api build",
+    "build:web": "pnpm --filter @afk/web build",
+    "lint": "pnpm -r lint",
+    "db:migrate": "pnpm --filter @afk/api db:migrate",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down"
+  },
+  "keywords": [
+    "agriculture",
+    "drone",
+    "orthomosaic",
+    "gis",
+    "mapping"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=8.0.0"
+  }
+}
