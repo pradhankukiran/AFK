@@ -207,8 +207,14 @@ export default function MapContainer({
         zoom: 5,
       });
 
-    map.addControl(new maplibregl.NavigationControl(), 'top-right');
-    map.addControl(new maplibregl.ScaleControl({ maxWidth: 100, unit: 'metric' }), 'bottom-left');
+      map.addControl(new maplibregl.NavigationControl(), 'top-right');
+      map.addControl(new maplibregl.ScaleControl({ maxWidth: 100, unit: 'metric' }), 'bottom-left');
+
+      map.on('styleimagemissing', (e) => {
+        if (map.hasImage(e.id)) return;
+        const empty = new ImageData(new Uint8ClampedArray([0, 0, 0, 0]), 1, 1);
+        map.addImage(e.id, empty);
+      });
 
     const draw = new MapboxDraw({
       displayControlsDefault: false,
@@ -355,6 +361,54 @@ export default function MapContainer({
       map.jumpTo({ center: projectCenter, zoom: tileBestZoom });
     }
   }, [mapLoaded, project.id, project.orthomosaic_path, projectBounds, projectCenter, tileBestZoom, tileMinZoom, tileMaxZoom]);
+
+  // Show project bounds outline (debug + visual anchor)
+  useEffect(() => {
+    if (!mapLoaded || !mapRef.current || !projectBounds) return;
+
+    const map = mapRef.current;
+    const sourceId = 'project-bounds';
+    const layerId = 'project-bounds-outline';
+
+    const boundsGeojson: GeoJSON.FeatureCollection = {
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          properties: {},
+          geometry: {
+            type: 'Polygon',
+            coordinates: [[
+              projectBounds[0],
+              [projectBounds[1][0], projectBounds[0][1]],
+              projectBounds[1],
+              [projectBounds[0][0], projectBounds[1][1]],
+              projectBounds[0],
+            ]],
+          },
+        },
+      ],
+    };
+
+    if (map.getLayer(layerId)) {
+      map.removeLayer(layerId);
+    }
+    if (map.getSource(sourceId)) {
+      map.removeSource(sourceId);
+    }
+
+    map.addSource(sourceId, { type: 'geojson', data: boundsGeojson });
+    map.addLayer({
+      id: layerId,
+      type: 'line',
+      source: sourceId,
+      paint: {
+        'line-color': '#22c55e',
+        'line-width': 2,
+        'line-opacity': 0.9,
+      },
+    });
+  }, [mapLoaded, projectBounds]);
 
   // Update annotations source/layers
   useEffect(() => {
