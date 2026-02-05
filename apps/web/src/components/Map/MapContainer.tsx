@@ -24,6 +24,7 @@ export default function MapContainer({
   const annotationsRef = useRef<Annotation[]>([]);
   const onAnnotationClickRef = useRef<(annotation: Annotation) => void>(() => {});
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [mapReadyToken, setMapReadyToken] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const baseStyleUrl =
@@ -285,6 +286,7 @@ export default function MapContainer({
       mapRef.current = map;
       // Ensure dependent effects run even if load event was missed
       setMapLoaded(true);
+      setMapReadyToken((token) => token + 1);
     };
 
     void createMap();
@@ -302,7 +304,7 @@ export default function MapContainer({
   useEffect(() => {
     if (!mapRef.current || !projectBounds) return;
     mapRef.current.fitBounds(projectBounds, { padding: 40, maxZoom: tileBestZoom });
-  }, [projectBounds, tileBestZoom]);
+  }, [projectBounds, tileBestZoom, mapReadyToken]);
 
   // Load orthomosaic tiles
   useEffect(() => {
@@ -404,13 +406,14 @@ export default function MapContainer({
     return () => {
       cancelled = true;
     };
-  }, [mapLoaded, project.id, project.orthomosaic_path, projectBounds, projectCenter, tileBestZoom, tileMinZoom, tileMaxZoom]);
+  }, [mapReadyToken, project.id, project.orthomosaic_path, projectBounds, projectCenter, tileBestZoom, tileMinZoom, tileMaxZoom]);
 
   // Show project bounds outline (debug + visual anchor)
   useEffect(() => {
-    if (!mapLoaded || !mapRef.current || !projectBounds) return;
+    if (!mapRef.current || !projectBounds) return;
 
     const map = mapRef.current;
+    if (!map.isStyleLoaded()) return;
     const sourceId = 'project-bounds';
     const layerId = 'project-bounds-outline';
 
@@ -452,11 +455,11 @@ export default function MapContainer({
         'line-opacity': 0.9,
       },
     });
-  }, [mapLoaded, projectBounds]);
+  }, [projectBounds, mapReadyToken]);
 
   // Update annotations source/layers
   useEffect(() => {
-    if (!mapLoaded || !mapRef.current) return;
+    if (!mapRef.current) return;
 
     const map = mapRef.current;
 
@@ -595,7 +598,7 @@ export default function MapContainer({
         ['case', ['==', ['get', 'id'], selectedId], '#000', '#fff']
       );
     }
-  }, [mapLoaded, annotations, selectedAnnotation, onAnnotationClick]);
+  }, [annotations, selectedAnnotation, onAnnotationClick, mapReadyToken]);
 
   // Zoom to selected annotation
   useEffect(() => {
