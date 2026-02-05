@@ -283,6 +283,8 @@ export default function MapContainer({
         handleLoad();
       }
       mapRef.current = map;
+      // Ensure dependent effects run even if load event was missed
+      setMapLoaded(true);
     };
 
     void createMap();
@@ -304,7 +306,7 @@ export default function MapContainer({
 
   // Load orthomosaic tiles
   useEffect(() => {
-    if (!mapLoaded || !mapRef.current) return;
+    if (!mapRef.current) return;
 
     const map = mapRef.current;
 
@@ -313,13 +315,6 @@ export default function MapContainer({
 
     setError(null);
     setLoading(false);
-
-    if (map.getLayer(layerId)) {
-      map.removeLayer(layerId);
-    }
-    if (map.getSource(sourceId)) {
-      map.removeSource(sourceId);
-    }
 
     if (!project.orthomosaic_path) return;
 
@@ -330,6 +325,12 @@ export default function MapContainer({
       if (cancelled) return;
 
       try {
+        if (map.getLayer(layerId)) {
+          map.removeLayer(layerId);
+        }
+        if (map.getSource(sourceId)) {
+          map.removeSource(sourceId);
+        }
         const source: maplibregl.RasterSourceSpecification = {
           type: 'raster',
           tiles: [tileTemplate],
@@ -384,11 +385,12 @@ export default function MapContainer({
       }
     };
 
+    const onStyleLoad = () => {
+      map.off('style.load', onStyleLoad);
+      setupSource();
+    };
+
     if (!map.isStyleLoaded()) {
-      const onStyleLoad = () => {
-        map.off('style.load', onStyleLoad);
-        setupSource();
-      };
       map.on('style.load', onStyleLoad);
       return () => {
         cancelled = true;
