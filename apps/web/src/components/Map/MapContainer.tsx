@@ -330,44 +330,57 @@ export default function MapContainer({
 
     if (!project.orthomosaic_path) return;
 
-    const tileUrl = `/outputs/${project.id}/tiles/{z}/{x}/{y}.png`;
-    const source: maplibregl.RasterSourceSpecification = {
-      type: 'raster',
-      tiles: [tileUrl],
-      tileSize: 256,
-      minzoom: tileMinZoom,
-      maxzoom: tileMaxZoom,
-      bounds: projectBounds ? [projectBounds[0][0], projectBounds[0][1], projectBounds[1][0], projectBounds[1][1]] : undefined,
-    };
+    const tileTemplate = `/outputs/${project.id}/tiles/{z}/{x}/{y}.png`;
+    let cancelled = false;
 
-    map.addSource(sourceId, source);
+    const setupSource = async () => {
+      const scheme = await detectTileScheme(tileTemplate, projectCenter, tileBestZoom);
+      if (cancelled) return;
 
-    const beforeId = map.getLayer('annotations-fill') ? 'annotations-fill' : undefined;
-    map.addLayer(
-      {
-        id: layerId,
+      const source: maplibregl.RasterSourceSpecification = {
         type: 'raster',
-        source: sourceId,
+        tiles: [tileTemplate],
+        tileSize: 256,
         minzoom: tileMinZoom,
         maxzoom: tileMaxZoom,
-        paint: {
-          'raster-opacity': 1,
-          'raster-fade-duration': 0,
-          'raster-resampling': 'nearest',
-        },
-      },
-      beforeId
-    );
-    if (!beforeId) {
-      map.moveLayer(layerId);
-    }
+        ...(scheme ? { scheme } : {}),
+      };
 
-    if (projectBounds) {
-      map.fitBounds(projectBounds, { padding: 40, maxZoom: tileBestZoom });
-    }
-    if (projectCenter) {
-      map.jumpTo({ center: projectCenter, zoom: tileBestZoom });
-    }
+      map.addSource(sourceId, source);
+
+      const beforeId = map.getLayer('annotations-fill') ? 'annotations-fill' : undefined;
+      map.addLayer(
+        {
+          id: layerId,
+          type: 'raster',
+          source: sourceId,
+          minzoom: tileMinZoom,
+          maxzoom: tileMaxZoom,
+          paint: {
+            'raster-opacity': 1,
+            'raster-fade-duration': 0,
+            'raster-resampling': 'nearest',
+          },
+        },
+        beforeId
+      );
+      if (!beforeId) {
+        map.moveLayer(layerId);
+      }
+
+      if (projectBounds) {
+        map.fitBounds(projectBounds, { padding: 40, maxZoom: tileBestZoom });
+      }
+      if (projectCenter) {
+        map.jumpTo({ center: projectCenter, zoom: tileBestZoom });
+      }
+    };
+
+    void setupSource();
+
+    return () => {
+      cancelled = true;
+    };
   }, [mapLoaded, project.id, project.orthomosaic_path, projectBounds, projectCenter, tileBestZoom, tileMinZoom, tileMaxZoom]);
 
   // Show project bounds outline (debug + visual anchor)
@@ -625,6 +638,50 @@ export default function MapContainer({
       }
       default:
         return geometry;
+    }
+  }
+
+  async function detectTileScheme(
+    template: string,
+    center: [number, number] | null,
+    zoom: number
+  ): Promise<'tms' | undefined> {
+    if (!center) return undefined;
+    const { x, y } = lngLatToTile(center[0], center[1], zoom);
+    const xyzUrl = template
+      .replace('{z}', String(zoom))
+      .replace('{x}', String(x))
+      .replace('{y}', String(y));
+    const xyzOk = await isTileLikelyValid(xyzUrl);
+    if (xyzOk) return undefined;
+
+    const flippedY = (1 << zoom) - 1 - y;
+    const tmsUrl = template
+      .replace('{z}', String(zoom))
+      .replace('{x}', String(x))
+      .replace('{y}', String(flippedY));
+    const tmsOk = await isTileLikelyValid(tmsUrl);
+    return tmsOk ? 'tms' : undefined;
+  }
+
+  function lngLatToTile(lng: number, lat: number, zoom: number) {
+    const n = 2 ** zoom;
+    const x = Math.floor(((lng + 180) / 360) * n);
+    const latRad = (lat * Math.PI) / 180;
+    const y = Math.floor(
+      ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n
+    );
+    return { x, y };
+  }
+
+  async function isTileLikelyValid(url: string): Promise<boolean> {
+    try {
+      const res = await fetch(url, { method: 'GET' });
+      if (!res.ok) return false;
+      const blob = await res.blob();
+      return blob.size > 512;
+    } catch {
+      return false;
     }
   }
 
