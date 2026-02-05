@@ -101,12 +101,14 @@ export default function MapContainer({
     return value.map(item => wrapLineDasharray(item));
   };
 
-  const drawStyles = (MapboxDraw.styles as unknown as Array<Record<string, any>>).map((style) => {
-    if (!style.paint || !style.paint['line-dasharray']) return style;
-    const paint = { ...style.paint };
-    paint['line-dasharray'] = wrapLineDasharray(paint['line-dasharray']);
-    return { ...style, paint };
-  });
+  const drawStyles = (((MapboxDraw as unknown as { styles?: Array<Record<string, any>> }).styles) || []).map(
+    (style) => {
+      if (!style.paint || !style.paint['line-dasharray']) return style;
+      const paint = { ...style.paint };
+      paint['line-dasharray'] = wrapLineDasharray(paint['line-dasharray']);
+      return { ...style, paint };
+    }
+  );
 
   // Initialize map
   useEffect(() => {
