@@ -318,7 +318,8 @@ export default function MapContainer({
 
     if (!project.orthomosaic_path) return;
 
-    const tileTemplate = `/outputs/${project.id}/tiles/{z}/{x}/{y}.png`;
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const tileTemplate = `${origin}/outputs/${project.id}/tiles/{z}/{x}/{y}.png`;
     let cancelled = false;
 
     const setupSource = () => {
