@@ -322,61 +322,68 @@ export default function MapContainer({
     const tileTemplate = `/outputs/${project.id}/tiles/{z}/{x}/{y}.png`;
     let cancelled = false;
 
-    const setupSource = async () => {
+    const setupSource = () => {
       if (cancelled) return;
 
-      const source: maplibregl.RasterSourceSpecification = {
-        type: 'raster',
-        tiles: [tileTemplate],
-        tileSize: 256,
-        minzoom: tileMinZoom,
-        maxzoom: tileMaxZoom,
-        ...(projectBounds
-          ? {
-              bounds: [
-                projectBounds[0][0],
-                projectBounds[0][1],
-                projectBounds[1][0],
-                projectBounds[1][1],
-              ],
-            }
-          : {}),
-      };
-
-      map.addSource(sourceId, source);
-
-      const beforeId = map.getLayer('annotations-fill') ? 'annotations-fill' : undefined;
-      map.addLayer(
-        {
-          id: layerId,
+      try {
+        const source: maplibregl.RasterSourceSpecification = {
           type: 'raster',
-          source: sourceId,
+          tiles: [tileTemplate],
+          tileSize: 256,
           minzoom: tileMinZoom,
           maxzoom: tileMaxZoom,
-          paint: {
-            'raster-opacity': 1,
-            'raster-fade-duration': 0,
-            'raster-resampling': 'nearest',
-          },
-        },
-        beforeId
-      );
-      if (!beforeId) {
-        map.moveLayer(layerId);
-      }
+          ...(projectBounds
+            ? {
+                bounds: [
+                  projectBounds[0][0],
+                  projectBounds[0][1],
+                  projectBounds[1][0],
+                  projectBounds[1][1],
+                ],
+              }
+            : {}),
+        };
 
-      if (projectBounds) {
-        map.fitBounds(projectBounds, { padding: 40, maxZoom: tileBestZoom });
-      }
-      if (projectCenter) {
-        map.jumpTo({ center: projectCenter, zoom: tileBestZoom });
+        map.addSource(sourceId, source);
+
+        const beforeId = map.getLayer('annotations-fill') ? 'annotations-fill' : undefined;
+        map.addLayer(
+          {
+            id: layerId,
+            type: 'raster',
+            source: sourceId,
+            minzoom: tileMinZoom,
+            maxzoom: tileMaxZoom,
+            paint: {
+              'raster-opacity': 1,
+              'raster-fade-duration': 0,
+              'raster-resampling': 'nearest',
+            },
+          },
+          beforeId
+        );
+        if (!beforeId) {
+          map.moveLayer(layerId);
+        }
+
+        if (projectBounds) {
+          map.fitBounds(projectBounds, { padding: 40, maxZoom: tileBestZoom });
+        }
+        if (projectCenter) {
+          map.jumpTo({ center: projectCenter, zoom: tileBestZoom });
+        }
+
+        map.triggerRepaint();
+      } catch (err) {
+        console.error('Failed to add orthomosaic source/layer', err);
+        setError('Failed to add orthomosaic layer. Check console for details.');
       }
     };
 
     if (!map.isStyleLoaded()) {
       const onStyleLoad = () => {
         map.off('style.load', onStyleLoad);
-        void setupSource();
+        setupSource();
       };
       map.on('style.load', onStyleLoad);
       return () => {
@@ -385,7 +392,7 @@ export default function MapContainer({
       };
     }
 
-    void setupSource();
+    setupSource();
 
     return () => {
       cancelled = true;
