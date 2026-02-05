@@ -391,6 +391,22 @@ export default function MapContainer({
           beforeId
         );
 
+        // Move MapboxDraw layers above orthomosaic so drawing preview is visible
+        const drawLayerIds = [
+          'gl-draw-polygon-fill',
+          'gl-draw-lines',
+          'gl-draw-point-outer',
+          'gl-draw-point-inner',
+          'gl-draw-vertex-outer',
+          'gl-draw-vertex-inner',
+          'gl-draw-midpoint',
+        ];
+        drawLayerIds.forEach(id => {
+          if (map.getLayer(id)) {
+            map.moveLayer(id);
+          }
+        });
+
         if (projectBounds) {
           map.fitBounds(projectBounds, { padding: 40, maxZoom: tileBestZoom });
         } else if (projectCenter) {
