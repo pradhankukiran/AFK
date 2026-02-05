@@ -76,7 +76,7 @@ function AnnotationCard({
   };
 
   const formatArea = (sqm: number | null) => {
-    if (!sqm) return null;
+    if (typeof sqm !== 'number') return null;
     if (sqm >= 10000) {
       return `${(sqm / 10000).toFixed(2)} ha`;
     }
@@ -111,7 +111,7 @@ function AnnotationCard({
         {annotation.area_sqm && (
           <span className="mr-3">Area: {formatArea(annotation.area_sqm)}</span>
         )}
-        {annotation.perimeter_m && (
+        {typeof annotation.perimeter_m === 'number' && (
           <span>Perimeter: {annotation.perimeter_m.toFixed(1)} m</span>
         )}
       </div>

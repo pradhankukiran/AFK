@@ -238,7 +238,10 @@ export default function ProjectView() {
               <span>Total area:</span>
               <span className="font-medium">
                 {(() => {
-                  const totalArea = annotations.reduce((sum, a) => sum + (a.area_sqm || 0), 0);
+                  const totalArea = annotations.reduce((sum, a) => {
+                    const area = typeof a.area_sqm === 'number' ? a.area_sqm : 0;
+                    return sum + area;
+                  }, 0);
                   if (totalArea >= 10000) {
                     return `${(totalArea / 10000).toFixed(2)} ha`;
                   }

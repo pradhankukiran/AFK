@@ -25,7 +25,7 @@ export default function AnnotationCard({
     : categoryColors.other;
 
   const formatArea = (sqm: number | null) => {
-    if (!sqm) return null;
+    if (typeof sqm !== 'number') return null;
     if (sqm >= 10000) {
       return `${(sqm / 10000).toFixed(2)} ha`;
     }
@@ -59,7 +59,7 @@ export default function AnnotationCard({
       <div className="flex items-center justify-between">
         <div className="text-xs text-gray-500 space-x-2">
           {annotation.area_sqm && <span>Area: {formatArea(annotation.area_sqm)}</span>}
-          {annotation.perimeter_m && (
+          {typeof annotation.perimeter_m === 'number' && (
             <span>Perimeter: {annotation.perimeter_m.toFixed(0)} m</span>
           )}
         </div>

@@ -15,7 +15,7 @@ export default function AnnotationEditModal({ annotation, onSave, onClose }: Ann
   const [error, setError] = useState<string | null>(null);
 
   const formatArea = (sqm: number | null) => {
-    if (!sqm) return 'N/A';
+    if (typeof sqm !== 'number') return 'N/A';
     if (sqm >= 10000) {
       return `${(sqm / 10000).toFixed(2)} ha`;
     }
@@ -61,7 +61,7 @@ export default function AnnotationEditModal({ annotation, onSave, onClose }: Ann
             <div>
               <span className="text-gray-500">Perimeter:</span>
               <span className="ml-2 font-medium">
-                {annotation.perimeter_m ? `${annotation.perimeter_m.toFixed(1)} m` : 'N/A'}
+                {typeof annotation.perimeter_m === 'number' ? `${annotation.perimeter_m.toFixed(1)} m` : 'N/A'}
               </span>
             </div>
             <div className="col-span-2">

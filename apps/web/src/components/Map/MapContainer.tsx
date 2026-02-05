@@ -62,7 +62,6 @@ export default function MapContainer({
   }, [projectBounds]);
 
   const DrawRectangleMode = {
-    ...MapboxDraw.modes.draw_polygon,
     onSetup(this: any) {
       const polygon = this.newFeature({
         type: 'Feature',
@@ -74,16 +73,33 @@ export default function MapContainer({
       });
       this.addFeature(polygon);
       this.clearSelectedFeatures();
-      this.updateUIClasses({ mouse: 'add' });
-      this.activateUIButton('draw_rectangle');
-      this.setActionableState({ trash: true });
-      return { polygon, startPoint: null as [number, number] | null };
+      this.updateUIClasses({ mouse: 'crosshair' });
+      this.setActionableState({ trash: true, combineFeatures: false, uncombineFeatures: false });
+      return { polygon, startPoint: null as [number, number] | null, isDragging: false };
     },
-    onMouseDown(this: any, state: any, e: any) {
-      state.startPoint = [e.lngLat.lng, e.lngLat.lat];
+    onClick(this: any, state: any, e: any) {
+      if (!state.startPoint) {
+        // First click - set start point
+        state.startPoint = [e.lngLat.lng, e.lngLat.lat];
+        state.isDragging = true;
+      } else {
+        // Second click - finish rectangle
+        const start = state.startPoint;
+        const end: [number, number] = [e.lngLat.lng, e.lngLat.lat];
+        const coords: [number, number][] = [
+          [start[0], start[1]],
+          [end[0], start[1]],
+          [end[0], end[1]],
+          [start[0], end[1]],
+          [start[0], start[1]],
+        ];
+        state.polygon.setCoordinates([coords]);
+        this.map.fire('draw.create', { features: [state.polygon.toGeoJSON()] });
+        this.changeMode('simple_select');
+      }
     },
     onMouseMove(this: any, state: any, e: any) {
-      if (!state.startPoint) return;
+      if (!state.startPoint || !state.isDragging) return;
       const start = state.startPoint;
       const end: [number, number] = [e.lngLat.lng, e.lngLat.lat];
       const coords: [number, number][] = [
@@ -95,31 +111,21 @@ export default function MapContainer({
       ];
       state.polygon.setCoordinates([coords]);
     },
-    onMouseUp(this: any, state: any, e: any) {
-      if (!state.startPoint) return;
-      const start = state.startPoint;
-      const end: [number, number] = [e.lngLat.lng, e.lngLat.lat];
-      const coords: [number, number][] = [
-        [start[0], start[1]],
-        [end[0], start[1]],
-        [end[0], end[1]],
-        [start[0], end[1]],
-        [start[0], start[1]],
-      ];
-      state.polygon.setCoordinates([coords]);
-      this.changeMode('simple_select', { featureIds: [state.polygon.id] });
+    onKeyUp(this: any, state: any, e: any) {
+      if (e.keyCode === 27) {
+        // Escape key - cancel
+        this.deleteFeature([state.polygon.id], { silent: true });
+        this.changeMode('simple_select');
+      }
     },
     onStop(this: any, state: any) {
       this.updateUIClasses({ mouse: 'none' });
-      this.activateUIButton();
-
-      if (state.polygon.isValid()) {
-        this.map.fire('draw.create', {
-          features: [state.polygon.toGeoJSON()],
-        });
-      } else {
+      if (!state.polygon.isValid()) {
         this.deleteFeature([state.polygon.id], { silent: true });
       }
+    },
+    toDisplayFeatures(this: any, _state: any, geojson: any, display: any) {
+      display(geojson);
     },
   } as unknown as MapboxDraw.DrawCustomMode<any, any>;
 
@@ -240,24 +246,36 @@ export default function MapContainer({
 
         class RectangleControl implements maplibregl.IControl {
           private container!: HTMLDivElement;
+          private button!: HTMLButtonElement;
 
           onAdd(mapInstance: MapLibreMap) {
             void mapInstance;
             this.container = document.createElement('div');
-            this.container.className = 'maplibregl-ctrl maplibregl-ctrl-group';
+            this.container.className = 'maplibregl-ctrl maplibregl-ctrl-group mapbox-gl-draw_ctrl-draw-btn';
 
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.className = 'maplibregl-ctrl-icon';
-            button.title = 'Draw rectangle';
-            button.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5">
-              <rect x="4" y="5" width="12" height="10" rx="0.5" />
+            this.button = document.createElement('button');
+            this.button.type = 'button';
+            this.button.className = 'mapbox-gl-draw_ctrl-draw-btn mapbox-gl-draw_rectangle';
+            this.button.title = 'Rectangle tool';
+            this.button.style.cssText = 'width: 29px; height: 29px; padding: 0; display: flex; align-items: center; justify-content: center; background: white; border: none; cursor: pointer;';
+            this.button.innerHTML = `<svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="3" y="4.5" width="12" height="9" stroke="#333" stroke-width="1.5" fill="none"/>
             </svg>`;
-            button.onclick = () => {
+            this.button.onclick = () => {
               draw.changeMode('draw_rectangle');
+              this.button.classList.add('active');
             };
 
-            this.container.appendChild(button);
+            // Listen for mode changes to update active state
+            map.on('draw.modechange', (e: any) => {
+              if (e.mode === 'draw_rectangle') {
+                this.button.classList.add('active');
+              } else {
+                this.button.classList.remove('active');
+              }
+            });
+
+            this.container.appendChild(this.button);
             return this.container;
           }
 
@@ -355,6 +373,7 @@ export default function MapContainer({
 
         map.addSource(sourceId, source);
 
+        // Add orthomosaic below annotation layers if they exist
         const beforeId = map.getLayer('annotations-fill') ? 'annotations-fill' : undefined;
         map.addLayer(
           {
@@ -371,9 +390,6 @@ export default function MapContainer({
           },
           beforeId
         );
-        if (!beforeId) {
-          map.moveLayer(layerId);
-        }
 
         if (projectBounds) {
           map.fitBounds(projectBounds, { padding: 40, maxZoom: tileBestZoom });
@@ -505,6 +521,7 @@ export default function MapContainer({
           data: geojson,
         });
 
+        // Add annotation layers - they will be on top of any existing layers
         map.addLayer({
           id: 'annotations-fill',
           type: 'fill',
@@ -557,6 +574,13 @@ export default function MapContainer({
             'circle-stroke-width': 2,
           },
         });
+
+        // Ensure annotation layers are above the orthomosaic
+        if (map.getLayer('orthomosaic-layer')) {
+          map.moveLayer('annotations-fill');
+          map.moveLayer('annotations-outline');
+          map.moveLayer('annotations-point');
+        }
 
         map.on('click', 'annotations-fill', (e) => {
           const feature = e.features?.[0];
