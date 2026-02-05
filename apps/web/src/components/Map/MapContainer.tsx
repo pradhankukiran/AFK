@@ -23,7 +23,6 @@ export default function MapContainer({
   const drawRef = useRef<MapboxDraw | null>(null);
   const annotationsRef = useRef<Annotation[]>([]);
   const onAnnotationClickRef = useRef<(annotation: Annotation) => void>(() => {});
-  const [mapLoaded, setMapLoaded] = useState(false);
   const [mapReadyToken, setMapReadyToken] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -204,8 +203,8 @@ export default function MapContainer({
       const map = new maplibregl.Map({
         container: mapContainerRef.current,
         style,
-        center: [78.9629, 20.5937],
-        zoom: 5,
+        center: projectCenter ?? [78.9629, 20.5937],
+        zoom: projectCenter ? tileBestZoom : 5,
       });
 
       map.addControl(new maplibregl.NavigationControl(), 'top-right');
@@ -277,7 +276,6 @@ export default function MapContainer({
         if (projectBounds) {
           map.fitBounds(projectBounds, { padding: 40, maxZoom: tileBestZoom });
         }
-        setMapLoaded(true);
       };
       map.on('load', handleLoad);
       if (map.loaded()) {
@@ -285,7 +283,6 @@ export default function MapContainer({
       }
       mapRef.current = map;
       // Ensure dependent effects run even if load event was missed
-      setMapLoaded(true);
       setMapReadyToken((token) => token + 1);
     };
 
@@ -299,11 +296,20 @@ export default function MapContainer({
       mapRef.current = null;
       drawRef.current = null;
     };
-  }, [baseStyleUrl, onShapeCreated, projectBounds, tileMaxZoom]);
+  }, [baseStyleUrl, onShapeCreated, projectBounds, projectCenter, tileBestZoom]);
 
   useEffect(() => {
     if (!mapRef.current || !projectBounds) return;
-    mapRef.current.fitBounds(projectBounds, { padding: 40, maxZoom: tileBestZoom });
+    const map = mapRef.current;
+    const onStyleLoad = () => {
+      map.off('style.load', onStyleLoad);
+      map.fitBounds(projectBounds, { padding: 40, maxZoom: tileBestZoom });
+    };
+    if (!map.isStyleLoaded()) {
+      map.on('style.load', onStyleLoad);
+      return () => map.off('style.load', onStyleLoad);
+    }
+    map.fitBounds(projectBounds, { padding: 40, maxZoom: tileBestZoom });
   }, [projectBounds, tileBestZoom, mapReadyToken]);
 
   // Load orthomosaic tiles
@@ -389,22 +395,24 @@ export default function MapContainer({
     };
 
     const onStyleLoad = () => {
-      map.off('style.load', onStyleLoad);
+      setupSource();
+    };
+    const onIdle = () => {
       setupSource();
     };
 
     if (!map.isStyleLoaded()) {
-      map.on('style.load', onStyleLoad);
-      return () => {
-        cancelled = true;
-        map.off('style.load', onStyleLoad);
-      };
+      map.once('style.load', onStyleLoad);
+    } else {
+      setupSource();
     }
 
-    setupSource();
+    map.once('idle', onIdle);
 
     return () => {
       cancelled = true;
+      map.off('style.load', onStyleLoad);
+      map.off('idle', onIdle);
     };
   }, [mapReadyToken, project.id, project.orthomosaic_path, projectBounds, projectCenter, tileBestZoom, tileMinZoom, tileMaxZoom]);
 
@@ -413,48 +421,61 @@ export default function MapContainer({
     if (!mapRef.current || !projectBounds) return;
 
     const map = mapRef.current;
-    if (!map.isStyleLoaded()) return;
-    const sourceId = 'project-bounds';
-    const layerId = 'project-bounds-outline';
+    const addBoundsLayer = () => {
+      const sourceId = 'project-bounds';
+      const layerId = 'project-bounds-outline';
 
-    const boundsGeojson: GeoJSON.FeatureCollection = {
-      type: 'FeatureCollection',
-      features: [
-        {
-          type: 'Feature',
-          properties: {},
-          geometry: {
-            type: 'Polygon',
-            coordinates: [[
-              projectBounds[0],
-              [projectBounds[1][0], projectBounds[0][1]],
-              projectBounds[1],
-              [projectBounds[0][0], projectBounds[1][1]],
-              projectBounds[0],
-            ]],
+      const boundsGeojson: GeoJSON.FeatureCollection = {
+        type: 'FeatureCollection',
+        features: [
+          {
+            type: 'Feature',
+            properties: {},
+            geometry: {
+              type: 'Polygon',
+              coordinates: [[
+                projectBounds[0],
+                [projectBounds[1][0], projectBounds[0][1]],
+                projectBounds[1],
+                [projectBounds[0][0], projectBounds[1][1]],
+                projectBounds[0],
+              ]],
+            },
           },
+        ],
+      };
+
+      if (map.getLayer(layerId)) {
+        map.removeLayer(layerId);
+      }
+      if (map.getSource(sourceId)) {
+        map.removeSource(sourceId);
+      }
+
+      map.addSource(sourceId, { type: 'geojson', data: boundsGeojson });
+      map.addLayer({
+        id: layerId,
+        type: 'line',
+        source: sourceId,
+        paint: {
+          'line-color': '#22c55e',
+          'line-width': 2,
+          'line-opacity': 0.9,
         },
-      ],
+      });
     };
 
-    if (map.getLayer(layerId)) {
-      map.removeLayer(layerId);
-    }
-    if (map.getSource(sourceId)) {
-      map.removeSource(sourceId);
+    const onStyleLoad = () => {
+      map.off('style.load', onStyleLoad);
+      addBoundsLayer();
+    };
+
+    if (!map.isStyleLoaded()) {
+      map.on('style.load', onStyleLoad);
+      return () => map.off('style.load', onStyleLoad);
     }
 
-    map.addSource(sourceId, { type: 'geojson', data: boundsGeojson });
-    map.addLayer({
-      id: layerId,
-      type: 'line',
-      source: sourceId,
-      paint: {
-        'line-color': '#22c55e',
-        'line-width': 2,
-        'line-opacity': 0.9,
-      },
-    });
+    addBoundsLayer();
   }, [projectBounds, mapReadyToken]);
 
   // Update annotations source/layers
@@ -463,141 +484,150 @@ export default function MapContainer({
 
     const map = mapRef.current;
 
-    // Ensure style is fully loaded before adding sources/layers
-    if (!map.isStyleLoaded()) {
-      return; // Will re-run when mapLoaded cycles
-    }
+    const addAnnotationsLayers = () => {
+      const sourceId = 'annotations';
 
-    const sourceId = 'annotations';
+      annotationsRef.current = annotations;
+      onAnnotationClickRef.current = onAnnotationClick;
 
-    annotationsRef.current = annotations;
-    onAnnotationClickRef.current = onAnnotationClick;
+      const geojson: GeoJSON.FeatureCollection = {
+        type: 'FeatureCollection',
+        features: annotations.map(annotation => ({
+          type: 'Feature',
+          properties: {
+            id: annotation.id,
+            label: annotation.label,
+            category: annotation.category,
+          },
+          geometry: normalizeGeometry(annotation.geometry),
+        })),
+      };
 
-    const geojson: GeoJSON.FeatureCollection = {
-      type: 'FeatureCollection',
-      features: annotations.map(annotation => ({
-        type: 'Feature',
-        properties: {
-          id: annotation.id,
-          label: annotation.label,
-          category: annotation.category,
-        },
-        geometry: normalizeGeometry(annotation.geometry),
-      })),
+      if (!map.getSource(sourceId)) {
+        map.addSource(sourceId, {
+          type: 'geojson',
+          data: geojson,
+        });
+
+        map.addLayer({
+          id: 'annotations-fill',
+          type: 'fill',
+          source: sourceId,
+          filter: ['==', '$type', 'Polygon'],
+          paint: {
+            'fill-color': ['match', ['get', 'category'],
+              'disease', '#ef4444',
+              'irrigation', '#3b82f6',
+              'pest', '#f59e0b',
+              'other', '#6b7280',
+              '#22c55e',
+            ],
+            'fill-opacity': 0.3,
+          },
+        });
+
+        map.addLayer({
+          id: 'annotations-outline',
+          type: 'line',
+          source: sourceId,
+          filter: ['==', '$type', 'Polygon'],
+          paint: {
+            'line-color': ['match', ['get', 'category'],
+              'disease', '#ef4444',
+              'irrigation', '#3b82f6',
+              'pest', '#f59e0b',
+              'other', '#6b7280',
+              '#22c55e',
+            ],
+            'line-width': 2,
+          },
+        });
+
+        map.addLayer({
+          id: 'annotations-point',
+          type: 'circle',
+          source: sourceId,
+          filter: ['==', '$type', 'Point'],
+          paint: {
+            'circle-radius': 7,
+            'circle-color': ['match', ['get', 'category'],
+              'disease', '#ef4444',
+              'irrigation', '#3b82f6',
+              'pest', '#f59e0b',
+              'other', '#6b7280',
+              '#22c55e',
+            ],
+            'circle-stroke-color': '#fff',
+            'circle-stroke-width': 2,
+          },
+        });
+
+        map.on('click', 'annotations-fill', (e) => {
+          const feature = e.features?.[0];
+          const id = feature?.properties?.id as string | undefined;
+          const annotation = annotationsRef.current.find(a => a.id === id);
+          if (annotation) onAnnotationClickRef.current(annotation);
+        });
+
+        map.on('click', 'annotations-point', (e) => {
+          const feature = e.features?.[0];
+          const id = feature?.properties?.id as string | undefined;
+          const annotation = annotationsRef.current.find(a => a.id === id);
+          if (annotation) onAnnotationClickRef.current(annotation);
+        });
+
+        map.on('mouseenter', 'annotations-fill', () => {
+          map.getCanvas().style.cursor = 'pointer';
+        });
+        map.on('mouseleave', 'annotations-fill', () => {
+          map.getCanvas().style.cursor = '';
+        });
+        map.on('mouseenter', 'annotations-point', () => {
+          map.getCanvas().style.cursor = 'pointer';
+        });
+        map.on('mouseleave', 'annotations-point', () => {
+          map.getCanvas().style.cursor = '';
+        });
+      } else {
+        const source = map.getSource(sourceId) as maplibregl.GeoJSONSource;
+        source.setData(geojson);
+      }
+
+      const selectedId = selectedAnnotation?.id || '';
+      if (map.getLayer('annotations-outline')) {
+        map.setPaintProperty('annotations-outline', 'line-width',
+          ['case', ['==', ['get', 'id'], selectedId], 3, 2]
+        );
+        map.setPaintProperty('annotations-outline', 'line-color',
+          ['case', ['==', ['get', 'id'], selectedId], '#000',
+            ['match', ['get', 'category'],
+              'disease', '#ef4444',
+              'irrigation', '#3b82f6',
+              'pest', '#f59e0b',
+              'other', '#6b7280',
+              '#22c55e',
+            ],
+          ]
+        );
+      }
+      if (map.getLayer('annotations-point')) {
+        map.setPaintProperty('annotations-point', 'circle-stroke-color',
+          ['case', ['==', ['get', 'id'], selectedId], '#000', '#fff']
+        );
+      }
     };
 
-    if (!map.getSource(sourceId)) {
-      map.addSource(sourceId, {
-        type: 'geojson',
-        data: geojson,
-      });
+    const onStyleLoad = () => {
+      map.off('style.load', onStyleLoad);
+      addAnnotationsLayers();
+    };
 
-      map.addLayer({
-        id: 'annotations-fill',
-        type: 'fill',
-        source: sourceId,
-        filter: ['==', '$type', 'Polygon'],
-        paint: {
-          'fill-color': ['match', ['get', 'category'],
-            'disease', '#ef4444',
-            'irrigation', '#3b82f6',
-            'pest', '#f59e0b',
-            'other', '#6b7280',
-            '#22c55e',
-          ],
-          'fill-opacity': 0.3,
-        },
-      });
-
-      map.addLayer({
-        id: 'annotations-outline',
-        type: 'line',
-        source: sourceId,
-        filter: ['==', '$type', 'Polygon'],
-        paint: {
-          'line-color': ['match', ['get', 'category'],
-            'disease', '#ef4444',
-            'irrigation', '#3b82f6',
-            'pest', '#f59e0b',
-            'other', '#6b7280',
-            '#22c55e',
-          ],
-          'line-width': 2,
-        },
-      });
-
-      map.addLayer({
-        id: 'annotations-point',
-        type: 'circle',
-        source: sourceId,
-        filter: ['==', '$type', 'Point'],
-        paint: {
-          'circle-radius': 7,
-          'circle-color': ['match', ['get', 'category'],
-            'disease', '#ef4444',
-            'irrigation', '#3b82f6',
-            'pest', '#f59e0b',
-            'other', '#6b7280',
-            '#22c55e',
-          ],
-          'circle-stroke-color': '#fff',
-          'circle-stroke-width': 2,
-        },
-      });
-
-      map.on('click', 'annotations-fill', (e) => {
-        const feature = e.features?.[0];
-        const id = feature?.properties?.id as string | undefined;
-        const annotation = annotationsRef.current.find(a => a.id === id);
-        if (annotation) onAnnotationClickRef.current(annotation);
-      });
-
-      map.on('click', 'annotations-point', (e) => {
-        const feature = e.features?.[0];
-        const id = feature?.properties?.id as string | undefined;
-        const annotation = annotationsRef.current.find(a => a.id === id);
-        if (annotation) onAnnotationClickRef.current(annotation);
-      });
-
-      map.on('mouseenter', 'annotations-fill', () => {
-        map.getCanvas().style.cursor = 'pointer';
-      });
-      map.on('mouseleave', 'annotations-fill', () => {
-        map.getCanvas().style.cursor = '';
-      });
-      map.on('mouseenter', 'annotations-point', () => {
-        map.getCanvas().style.cursor = 'pointer';
-      });
-      map.on('mouseleave', 'annotations-point', () => {
-        map.getCanvas().style.cursor = '';
-      });
-    } else {
-      const source = map.getSource(sourceId) as maplibregl.GeoJSONSource;
-      source.setData(geojson);
+    if (!map.isStyleLoaded()) {
+      map.on('style.load', onStyleLoad);
+      return () => map.off('style.load', onStyleLoad);
     }
 
-    const selectedId = selectedAnnotation?.id || '';
-    if (map.getLayer('annotations-outline')) {
-      map.setPaintProperty('annotations-outline', 'line-width',
-        ['case', ['==', ['get', 'id'], selectedId], 3, 2]
-      );
-      map.setPaintProperty('annotations-outline', 'line-color',
-        ['case', ['==', ['get', 'id'], selectedId], '#000',
-          ['match', ['get', 'category'],
-            'disease', '#ef4444',
-            'irrigation', '#3b82f6',
-            'pest', '#f59e0b',
-            'other', '#6b7280',
-            '#22c55e',
-          ],
-        ]
-      );
-    }
-    if (map.getLayer('annotations-point')) {
-      map.setPaintProperty('annotations-point', 'circle-stroke-color',
-        ['case', ['==', ['get', 'id'], selectedId], '#000', '#fff']
-      );
-    }
+    addAnnotationsLayers();
   }, [annotations, selectedAnnotation, onAnnotationClick, mapReadyToken]);
 
   // Zoom to selected annotation
