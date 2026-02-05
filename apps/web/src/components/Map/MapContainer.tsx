@@ -131,12 +131,6 @@ export default function MapContainer({
       },
       paint: {
         'line-color': ['case', ['==', ['get', 'active'], 'true'], '#fbb03b', '#3bb2d0'],
-        'line-dasharray': [
-          'case',
-          ['==', ['get', 'active'], 'true'],
-          ['literal', [0.2, 2]],
-          ['literal', [2, 0]],
-        ],
         'line-width': 2,
       },
     },
