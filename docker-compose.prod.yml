@@ -9,6 +9,11 @@ services:
       - DATABASE_URL=postgres://afk:${DB_PASSWORD}@db:5432/afk
       - NODEODM_URL=${NODEODM_URL}
       - API_PORT=4000
+      - ENABLE_TILES=${ENABLE_TILES}
+      - TILE_ZOOM_RANGE=${TILE_ZOOM_RANGE}
+      - ENABLE_COG=${ENABLE_COG}
+      - GDAL2TILES=${GDAL2TILES}
+      - GDAL_TRANSLATE=${GDAL_TRANSLATE}
     ports:
       - "4000:4000"
     volumes:
@@ -40,6 +45,10 @@ services:
     build:
       context: ./apps/web
       dockerfile: Dockerfile
+      args:
+        - VITE_BASEMAP_STYLE_URL=${VITE_BASEMAP_STYLE_URL}
+        - VITE_TILE_MIN_ZOOM=${VITE_TILE_MIN_ZOOM}
+        - VITE_TILE_MAX_ZOOM=${VITE_TILE_MAX_ZOOM}
     container_name: afk-web
     ports:
       - "80:80"

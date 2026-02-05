@@ -27,7 +27,7 @@ export default function MapContainer({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const baseStyleUrl =
-    import.meta.env.VITE_BASEMAP_STYLE_URL || 'https://demotiles.maplibre.org/style.json';
+    import.meta.env.VITE_BASEMAP_STYLE_URL || 'https://tiles.openfreemap.org/styles/liberty';
   const defaultMinZoom = Number(import.meta.env.VITE_TILE_MIN_ZOOM || 14);
   const defaultMaxZoom = Number(import.meta.env.VITE_TILE_MAX_ZOOM || 22);
   const tileMinZoom = project.tile_min_zoom ?? defaultMinZoom;
@@ -51,6 +51,13 @@ export default function MapContainer({
       [bounds[2], bounds[3]],
     ];
   }, [project.bounds]);
+  const projectCenter = useMemo<[number, number] | null>(() => {
+    if (!projectBounds) return null;
+    return [
+      (projectBounds[0][0] + projectBounds[1][0]) / 2,
+      (projectBounds[0][1] + projectBounds[1][1]) / 2,
+    ];
+  }, [projectBounds]);
 
   const DrawRectangleMode = {
     ...MapboxDraw.modes.draw_polygon,
@@ -313,11 +320,8 @@ export default function MapContainer({
       tileSize: 256,
       minzoom: tileMinZoom,
       maxzoom: tileMaxZoom,
+      bounds: projectBounds ? [projectBounds[0][0], projectBounds[0][1], projectBounds[1][0], projectBounds[1][1]] : undefined,
     };
-
-    if (projectBounds) {
-      source.bounds = [projectBounds[0][0], projectBounds[0][1], projectBounds[1][0], projectBounds[1][1]];
-    }
 
     map.addSource(sourceId, source);
 
@@ -336,7 +340,10 @@ export default function MapContainer({
     if (projectBounds) {
       map.fitBounds(projectBounds, { padding: 40, maxZoom: tileBestZoom });
     }
-  }, [mapLoaded, project.id, project.orthomosaic_path, projectBounds, tileBestZoom]);
+    if (projectCenter) {
+      map.jumpTo({ center: projectCenter, zoom: tileBestZoom });
+    }
+  }, [mapLoaded, project.id, project.orthomosaic_path, projectBounds, projectCenter, tileBestZoom, tileMinZoom, tileMaxZoom]);
 
   // Update annotations source/layers
   useEffect(() => {

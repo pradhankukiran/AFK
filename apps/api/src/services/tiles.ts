@@ -9,6 +9,7 @@ export async function generateTiles(inputPath: string, outputDir: string): Promi
   await fs.mkdir(outputDir, { recursive: true });
 
   const args = [
+    '-p', 'mercator',
     '-z', config.tileZoomRange,
     '--xyz',
     '-w', 'none',
