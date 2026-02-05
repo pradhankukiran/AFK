@@ -194,13 +194,18 @@ export default function MapContainer({
   // Initialize map
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
+    let cancelled = false;
 
-    const map = new maplibregl.Map({
-      container: mapContainerRef.current,
-      style: baseStyleUrl,
-      center: [78.9629, 20.5937],
-      zoom: 5,
-    });
+    const createMap = async () => {
+      const style = await resolveStyle(baseStyleUrl);
+      if (cancelled || !mapContainerRef.current) return;
+
+      const map = new maplibregl.Map({
+        container: mapContainerRef.current,
+        style,
+        center: [78.9629, 20.5937],
+        zoom: 5,
+      });
 
     map.addControl(new maplibregl.NavigationControl(), 'top-right');
     map.addControl(new maplibregl.ScaleControl({ maxWidth: 100, unit: 'metric' }), 'bottom-left');
@@ -267,14 +272,20 @@ export default function MapContainer({
       }
       setMapLoaded(true);
     });
-    mapRef.current = map;
+      mapRef.current = map;
+    };
+
+    void createMap();
 
     return () => {
-      map.remove();
+      cancelled = true;
+      if (mapRef.current) {
+        mapRef.current.remove();
+      }
       mapRef.current = null;
       drawRef.current = null;
     };
-  }, [onShapeCreated, projectBounds, tileMaxZoom]);
+  }, [baseStyleUrl, onShapeCreated, projectBounds, tileMaxZoom]);
 
   useEffect(() => {
     if (!mapRef.current || !projectBounds) return;
@@ -553,6 +564,63 @@ export default function MapContainer({
       default:
         return geometry;
     }
+  }
+
+  async function resolveStyle(styleUrl: string | undefined) {
+    if (!styleUrl) return baseFallbackStyle();
+    try {
+      const res = await fetch(styleUrl);
+      if (!res.ok) {
+        return styleUrl;
+      }
+      const style = await res.json();
+      return sanitizeStyle(style);
+    } catch {
+      return styleUrl;
+    }
+  }
+
+  function baseFallbackStyle() {
+    return {
+      version: 8,
+      sources: {},
+      layers: [
+        {
+          id: 'background',
+          type: 'background',
+          paint: { 'background-color': '#f2f3f4' },
+        },
+      ],
+    };
+  }
+
+  function sanitizeStyle(style: any) {
+    if (!style || !Array.isArray(style.layers)) return style;
+    const sanitizedLayers = style.layers.map((layer: any) => {
+      if (!layer || !layer.filter) return layer;
+      return { ...layer, filter: sanitizeFilter(layer.filter) };
+    });
+    return { ...style, layers: sanitizedLayers };
+  }
+
+  function sanitizeFilter(filter: any): any {
+    if (!Array.isArray(filter)) return filter;
+    const [op, ...args] = filter;
+    const numericOps = new Set(['>', '>=', '<', '<=']);
+    if (numericOps.has(op) && args.length >= 2) {
+      return [op, sanitizeNumericOperand(args[0]), args[1]];
+    }
+    return [op, ...args.map(sanitizeFilter)];
+  }
+
+  function sanitizeNumericOperand(operand: any): any {
+    if (Array.isArray(operand) && operand[0] === 'get') {
+      return ['to-number', operand, 0];
+    }
+    if (Array.isArray(operand)) {
+      return operand.map(sanitizeFilter);
+    }
+    return operand;
   }
 
   return (
