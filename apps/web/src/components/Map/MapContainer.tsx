@@ -216,61 +216,70 @@ export default function MapContainer({
         map.addImage(e.id, empty);
       });
 
-    const draw = new MapboxDraw({
-      displayControlsDefault: false,
-      modes: {
-        ...MapboxDraw.modes,
-        draw_rectangle: DrawRectangleMode,
-      },
-      controls: {
-        polygon: true,
-        point: true,
-        trash: false,
-      },
-      ...(drawStyles.length > 0 ? { styles: drawStyles } : {}),
-    });
+      const ensureDrawControls = () => {
+        if (drawRef.current) return;
 
-    map.addControl(draw as unknown as maplibregl.IControl, 'top-right');
-    drawRef.current = draw;
+        const draw = new MapboxDraw({
+          displayControlsDefault: false,
+          modes: {
+            ...MapboxDraw.modes,
+            draw_rectangle: DrawRectangleMode,
+          },
+          controls: {
+            polygon: true,
+            point: true,
+            trash: false,
+          },
+          ...(drawStyles.length > 0 ? { styles: drawStyles } : {}),
+        });
 
-    // Add a custom rectangle control button
-    class RectangleControl implements maplibregl.IControl {
-      private container!: HTMLDivElement;
+        map.addControl(draw as unknown as maplibregl.IControl, 'top-right');
+        drawRef.current = draw;
 
-      onAdd(mapInstance: MapLibreMap) {
-        void mapInstance;
-        this.container = document.createElement('div');
-        this.container.className = 'maplibregl-ctrl maplibregl-ctrl-group';
+        class RectangleControl implements maplibregl.IControl {
+          private container!: HTMLDivElement;
 
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'maplibregl-ctrl-icon';
-        button.title = 'Draw rectangle';
-        button.innerHTML = '&#9633;';
-        button.onclick = () => {
-          draw.changeMode('draw_rectangle');
-        };
+          onAdd(mapInstance: MapLibreMap) {
+            void mapInstance;
+            this.container = document.createElement('div');
+            this.container.className = 'maplibregl-ctrl maplibregl-ctrl-group';
 
-        this.container.appendChild(button);
-        return this.container;
-      }
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'maplibregl-ctrl-icon';
+            button.title = 'Draw rectangle';
+            button.innerHTML = '&#9633;';
+            button.onclick = () => {
+              draw.changeMode('draw_rectangle');
+            };
 
-      onRemove() {
-        this.container.remove();
-      }
-    }
+            this.container.appendChild(button);
+            return this.container;
+          }
 
-    map.addControl(new RectangleControl(), 'top-right');
-
-    map.on('draw.create', (e) => {
-      const feature = e.features?.[0];
-      if (feature?.geometry) {
-        onShapeCreated(feature.geometry as GeoJSON.Geometry);
-        if (feature.id) {
-          draw.delete(feature.id);
+          onRemove() {
+            this.container.remove();
+          }
         }
+
+        map.addControl(new RectangleControl(), 'top-right');
+
+        map.on('draw.create', (e) => {
+          const feature = e.features?.[0];
+          if (feature?.geometry) {
+            onShapeCreated(feature.geometry as GeoJSON.Geometry);
+            if (feature.id) {
+              draw.delete(feature.id);
+            }
+          }
+        });
+      };
+
+      if (map.loaded()) {
+        ensureDrawControls();
+      } else {
+        map.once('load', ensureDrawControls);
       }
-    });
 
       map.on('load', () => {
         // noop: camera is set when orthomosaic layer is ready
