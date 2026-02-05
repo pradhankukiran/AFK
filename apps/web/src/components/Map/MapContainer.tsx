@@ -28,8 +28,10 @@ export default function MapContainer({
   const [error, setError] = useState<string | null>(null);
   const baseStyleUrl =
     import.meta.env.VITE_BASEMAP_STYLE_URL || 'https://demotiles.maplibre.org/style.json';
-  const tileMinZoom = Number(import.meta.env.VITE_TILE_MIN_ZOOM || 14);
-  const tileMaxZoom = Number(import.meta.env.VITE_TILE_MAX_ZOOM || 22);
+  const defaultMinZoom = Number(import.meta.env.VITE_TILE_MIN_ZOOM || 14);
+  const defaultMaxZoom = Number(import.meta.env.VITE_TILE_MAX_ZOOM || 22);
+  const tileMinZoom = project.tile_min_zoom ?? defaultMinZoom;
+  const tileMaxZoom = project.tile_max_zoom ?? defaultMaxZoom;
   const projectBounds = useMemo<[[number, number], [number, number]] | null>(() => {
     if (!project.bounds) return null;
     const coords = project.bounds.coordinates[0];

@@ -1,5 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { query } from '../db/index.js';
+import path from 'path';
+import fs from 'fs/promises';
+import { config } from '../config.js';
 import { Project, CreateProjectRequest, ProcessingStatus } from '../types/index.js';
 import { getTaskStatus } from '../services/nodeodm.js';
 
@@ -42,12 +45,70 @@ router.get('/:id', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Project not found' });
     }
 
-    res.json(result.rows[0]);
+    const project = result.rows[0] as Project & { tile_min_zoom?: number; tile_max_zoom?: number };
+
+    if (project.status === 'ready') {
+      const tilesDir = path.join(config.outputsDir, project.id, 'tiles');
+      const tileZoomRange = await getTileZoomRange(tilesDir);
+      if (tileZoomRange) {
+        project.tile_min_zoom = tileZoomRange.min;
+        project.tile_max_zoom = tileZoomRange.max;
+      }
+    }
+
+    res.json(project);
   } catch (error) {
     console.error('Error getting project:', error);
     res.status(500).json({ error: 'Failed to get project' });
   }
 });
+
+async function getTileZoomRange(tilesDir: string): Promise<{ min: number; max: number } | null> {
+  try {
+    const entries = await fs.readdir(tilesDir, { withFileTypes: true });
+    const zoomLevels = entries
+      .filter(entry => entry.isDirectory() && /^\d+$/.test(entry.name))
+      .map(entry => Number(entry.name))
+      .sort((a, b) => a - b);
+
+    if (zoomLevels.length === 0) return null;
+
+    const validZooms: number[] = [];
+    const sizeThreshold = 2048;
+
+    for (const zoom of zoomLevels) {
+      const zoomDir = path.join(tilesDir, String(zoom));
+      const xDirs = await fs.readdir(zoomDir, { withFileTypes: true });
+      let hasData = false;
+
+      for (const xDir of xDirs) {
+        if (!xDir.isDirectory()) continue;
+        const xPath = path.join(zoomDir, xDir.name);
+        const yFiles = await fs.readdir(xPath, { withFileTypes: true });
+
+        for (const yFile of yFiles) {
+          if (!yFile.isFile() || !yFile.name.endsWith('.png')) continue;
+          const filePath = path.join(xPath, yFile.name);
+          const stats = await fs.stat(filePath);
+          if (stats.size > sizeThreshold) {
+            hasData = true;
+            break;
+          }
+        }
+
+        if (hasData) break;
+      }
+
+      if (hasData) validZooms.push(zoom);
+    }
+
+    if (validZooms.length === 0) return null;
+    return { min: validZooms[0], max: validZooms[validZooms.length - 1] };
+  } catch (error) {
+    console.warn('Failed to determine tile zoom range:', error);
+    return null;
+  }
+}
 
 // Create new project
 router.post('/', async (req: Request, res: Response) => {
