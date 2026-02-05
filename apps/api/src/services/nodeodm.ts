@@ -3,6 +3,7 @@ import FormData from 'form-data';
 import fs from 'fs';
 import fsPromises from 'fs/promises';
 import path from 'path';
+import { spawn } from 'child_process';
 import { pipeline } from 'stream/promises';
 import { config } from '../config.js';
 
@@ -69,9 +70,21 @@ export async function getTaskStatus(taskUuid: string): Promise<TaskStatusRespons
 }
 
 export async function downloadOrthomosaic(taskUuid: string, outputPath: string): Promise<void> {
-  const assets = await resolveOrthophotoAssets(taskUuid);
+  const assetList = await listTaskAssets(taskUuid);
+  const assets = resolveOrthophotoAssets(assetList);
   const tried: string[] = [];
   let lastError: Error | null = null;
+
+  try {
+    const zipPath = `${outputPath}.zip`;
+    tried.push('all.zip');
+    await downloadTaskAsset(taskUuid, 'all.zip', zipPath);
+    await extractOrthophotoFromZip(zipPath, outputPath);
+    await fsPromises.unlink(zipPath).catch(() => undefined);
+    return;
+  } catch (error) {
+    lastError = error instanceof Error ? error : new Error(String(error));
+  }
 
   for (const asset of assets) {
     tried.push(asset);
@@ -84,7 +97,8 @@ export async function downloadOrthomosaic(taskUuid: string, outputPath: string):
   }
 
   const suffix = tried.length > 0 ? ` Tried: ${tried.join(', ')}` : '';
-  throw new Error(`Failed to download orthomosaic.${suffix}${lastError ? ` Last error: ${lastError.message}` : ''}`);
+  const assetsHint = assetList.length > 0 ? ` Available assets: ${assetList.join(', ')}` : '';
+  throw new Error(`Failed to download orthomosaic.${suffix}${assetsHint}${lastError ? ` Last error: ${lastError.message}` : ''}`);
 }
 
 export async function cancelTask(taskUuid: string): Promise<void> {
@@ -99,8 +113,7 @@ export async function removeTask(taskUuid: string): Promise<void> {
   });
 }
 
-async function resolveOrthophotoAssets(taskUuid: string): Promise<string[]> {
-  const assets = await listTaskAssets(taskUuid);
+function resolveOrthophotoAssets(assets: string[]): string[] {
   const ranked = rankOrthophotoAssets(assets);
   if (ranked.length > 0) {
     return ranked;
@@ -150,8 +163,12 @@ function normalizeAssetList(data: unknown): string[] {
   const candidates = [
     maybeArray(record.assets),
     maybeObjectKeys(record.assets),
+    maybeArray(record.availableAssets),
+    maybeObjectKeys(record.availableAssets),
     maybeArray(record.available_assets),
     maybeObjectKeys(record.available_assets),
+    maybeArray(record.available),
+    maybeObjectKeys(record.available),
     maybeArray(record.results),
     Array.isArray(data) ? data.map(item => String(item)) : [],
   ];
@@ -232,4 +249,65 @@ async function streamToString(stream: NodeJS.ReadableStream): Promise<string> {
     stream.on('error', reject);
   });
   return Buffer.concat(chunks).toString('utf8');
+}
+
+async function extractOrthophotoFromZip(zipPath: string, outputPath: string): Promise<void> {
+  const script = `
+import sys, zipfile, shutil
+
+zip_path = sys.argv[1]
+output_path = sys.argv[2]
+
+candidates = [
+    'odm_orthophoto/odm_orthophoto.tif',
+    'odm_orthophoto/odm_orthophoto.tiff',
+    'orthophoto.tif',
+    'orthophoto.tiff',
+]
+
+with zipfile.ZipFile(zip_path) as z:
+    names = z.namelist()
+    target = None
+    for candidate in candidates:
+        for name in names:
+            if name.endswith(candidate):
+                target = name
+                break
+        if target:
+            break
+
+    if not target:
+        for name in names:
+            lower = name.lower()
+            if 'ortho' in lower and (lower.endswith('.tif') or lower.endswith('.tiff')):
+                target = name
+                break
+
+    if not target:
+        print('No orthophoto asset found in zip. Available assets: ' + ', '.join(names), file=sys.stderr)
+        sys.exit(2)
+
+    with z.open(target) as src, open(output_path, 'wb') as dst:
+        shutil.copyfileobj(src, dst)
+`;
+
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn('python3', ['-c', script, zipPath, outputPath], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stderr = '';
+    child.stderr.on('data', chunk => {
+      stderr += chunk.toString();
+    });
+
+    child.on('error', err => reject(err));
+    child.on('exit', code => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(stderr.trim() || `Failed to extract orthophoto from ${zipPath}`));
+      }
+    });
+  });
 }
