@@ -363,7 +363,7 @@ export default function MapContainer({
           label: annotation.label,
           category: annotation.category,
         },
-        geometry: annotation.geometry,
+        geometry: normalizeGeometry(annotation.geometry),
       })),
     };
 
@@ -526,6 +526,25 @@ export default function MapContainer({
         return (geometry.coordinates as [number, number][][][]).flat(2);
       default:
         return [];
+    }
+  }
+
+  function normalizeGeometry(geometry: GeoJSON.Geometry): GeoJSON.Geometry {
+    switch (geometry.type) {
+      case 'MultiPolygon': {
+        const coords = geometry.coordinates as [number, number][][][];
+        return coords.length > 0 ? { type: 'Polygon', coordinates: coords[0] } : geometry;
+      }
+      case 'MultiLineString': {
+        const coords = geometry.coordinates as [number, number][][];
+        return coords.length > 0 ? { type: 'LineString', coordinates: coords[0] } : geometry;
+      }
+      case 'MultiPoint': {
+        const coords = geometry.coordinates as [number, number][];
+        return coords.length > 0 ? { type: 'Point', coordinates: coords[0] } : geometry;
+      }
+      default:
+        return geometry;
     }
   }
 

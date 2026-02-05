@@ -89,7 +89,6 @@ async function getTileZoomRange(
       const zoomDir = path.join(tilesDir, String(zoom));
       const xDirs = await fs.readdir(zoomDir, { withFileTypes: true });
       let hasData = false;
-
       let maxSizeForZoom = -1;
 
       for (const xDir of xDirs) {
@@ -106,21 +105,30 @@ async function getTileZoomRange(
           }
           if (stats.size > sizeThreshold) {
             hasData = true;
-            break;
           }
         }
-
-        if (hasData) break;
       }
 
-      if (hasData) validZooms.push(zoom);
+      if (hasData) {
+        validZooms.push(zoom);
+      }
       if (maxSizeForZoom > bestSize) {
         bestSize = maxSizeForZoom;
         bestZoom = zoom;
       }
     }
 
-    if (validZooms.length === 0) return null;
+    if (validZooms.length === 0) {
+      if (bestSize > -1) {
+        return { min: zoomLevels[0], max: zoomLevels[zoomLevels.length - 1], best: bestZoom };
+      }
+      return null;
+    }
+
+    if (!validZooms.includes(bestZoom)) {
+      bestZoom = validZooms[validZooms.length - 1];
+    }
+
     return { min: validZooms[0], max: validZooms[validZooms.length - 1], best: bestZoom };
   } catch (error) {
     console.warn('Failed to determine tile zoom range:', error);
