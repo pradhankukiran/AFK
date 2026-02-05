@@ -304,17 +304,6 @@ export default function MapContainer({
 
     const map = mapRef.current;
 
-    // Ensure style is fully loaded before adding sources/layers
-    if (!map.isStyleLoaded()) {
-      const onStyleLoad = () => {
-        map.off('style.load', onStyleLoad);
-        // Trigger re-run by forcing a state update
-        setMapLoaded(false);
-        setTimeout(() => setMapLoaded(true), 0);
-      };
-      map.on('style.load', onStyleLoad);
-      return;
-    }
     const sourceId = 'orthomosaic';
     const layerId = 'orthomosaic-layer';
 
@@ -334,7 +323,6 @@ export default function MapContainer({
     let cancelled = false;
 
     const setupSource = async () => {
-      const scheme = await detectTileScheme(tileTemplate, projectCenter, tileBestZoom);
       if (cancelled) return;
 
       const source: maplibregl.RasterSourceSpecification = {
@@ -343,7 +331,7 @@ export default function MapContainer({
         tileSize: 256,
         minzoom: tileMinZoom,
         maxzoom: tileMaxZoom,
-        ...(scheme ? { scheme } : {}),
+        ...(projectBounds ? { bounds: projectBounds } : {}),
       };
 
       map.addSource(sourceId, source);
@@ -375,6 +363,18 @@ export default function MapContainer({
         map.jumpTo({ center: projectCenter, zoom: tileBestZoom });
       }
     };
+
+    if (!map.isStyleLoaded()) {
+      const onStyleLoad = () => {
+        map.off('style.load', onStyleLoad);
+        void setupSource();
+      };
+      map.on('style.load', onStyleLoad);
+      return () => {
+        cancelled = true;
+        map.off('style.load', onStyleLoad);
+      };
+    }
 
     void setupSource();
 
@@ -638,50 +638,6 @@ export default function MapContainer({
       }
       default:
         return geometry;
-    }
-  }
-
-  async function detectTileScheme(
-    template: string,
-    center: [number, number] | null,
-    zoom: number
-  ): Promise<'tms' | undefined> {
-    if (!center) return undefined;
-    const { x, y } = lngLatToTile(center[0], center[1], zoom);
-    const xyzUrl = template
-      .replace('{z}', String(zoom))
-      .replace('{x}', String(x))
-      .replace('{y}', String(y));
-    const xyzOk = await isTileLikelyValid(xyzUrl);
-    if (xyzOk) return undefined;
-
-    const flippedY = (1 << zoom) - 1 - y;
-    const tmsUrl = template
-      .replace('{z}', String(zoom))
-      .replace('{x}', String(x))
-      .replace('{y}', String(flippedY));
-    const tmsOk = await isTileLikelyValid(tmsUrl);
-    return tmsOk ? 'tms' : undefined;
-  }
-
-  function lngLatToTile(lng: number, lat: number, zoom: number) {
-    const n = 2 ** zoom;
-    const x = Math.floor(((lng + 180) / 360) * n);
-    const latRad = (lat * Math.PI) / 180;
-    const y = Math.floor(
-      ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n
-    );
-    return { x, y };
-  }
-
-  async function isTileLikelyValid(url: string): Promise<boolean> {
-    try {
-      const res = await fetch(url, { method: 'GET' });
-      if (!res.ok) return false;
-      const blob = await res.blob();
-      return blob.size > 512;
-    } catch {
-      return false;
     }
   }
 
