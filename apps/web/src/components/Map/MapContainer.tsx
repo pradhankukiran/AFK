@@ -272,12 +272,16 @@ export default function MapContainer({
       }
     });
 
-    map.on('load', () => {
-      if (projectBounds) {
-        map.fitBounds(projectBounds, { padding: 40, maxZoom: tileBestZoom });
+      const handleLoad = () => {
+        if (projectBounds) {
+          map.fitBounds(projectBounds, { padding: 40, maxZoom: tileBestZoom });
+        }
+        setMapLoaded(true);
+      };
+      map.on('load', handleLoad);
+      if (map.loaded()) {
+        handleLoad();
       }
-      setMapLoaded(true);
-    });
       mapRef.current = map;
     };
 
