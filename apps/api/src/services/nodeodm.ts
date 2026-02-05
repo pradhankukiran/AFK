@@ -1,6 +1,9 @@
 import axios from 'axios';
 import FormData from 'form-data';
 import fs from 'fs';
+import fsPromises from 'fs/promises';
+import path from 'path';
+import { pipeline } from 'stream/promises';
 import { config } from '../config.js';
 
 const client = axios.create({
@@ -66,18 +69,22 @@ export async function getTaskStatus(taskUuid: string): Promise<TaskStatusRespons
 }
 
 export async function downloadOrthomosaic(taskUuid: string, outputPath: string): Promise<void> {
-  const res = await client.get(`/task/${taskUuid}/download/orthophoto.tif`, {
-    responseType: 'stream',
-    timeout: 600000, // 10 minutes for download
-  });
+  const assets = await resolveOrthophotoAssets(taskUuid);
+  const tried: string[] = [];
+  let lastError: Error | null = null;
 
-  const writer = fs.createWriteStream(outputPath);
-  res.data.pipe(writer);
+  for (const asset of assets) {
+    tried.push(asset);
+    try {
+      await downloadTaskAsset(taskUuid, asset, outputPath);
+      return;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+    }
+  }
 
-  return new Promise((resolve, reject) => {
-    writer.on('finish', resolve);
-    writer.on('error', reject);
-  });
+  const suffix = tried.length > 0 ? ` Tried: ${tried.join(', ')}` : '';
+  throw new Error(`Failed to download orthomosaic.${suffix}${lastError ? ` Last error: ${lastError.message}` : ''}`);
 }
 
 export async function cancelTask(taskUuid: string): Promise<void> {
@@ -90,4 +97,139 @@ export async function removeTask(taskUuid: string): Promise<void> {
   await client.post(`/task/remove`, null, {
     params: { uuid: taskUuid },
   });
+}
+
+async function resolveOrthophotoAssets(taskUuid: string): Promise<string[]> {
+  const assets = await listTaskAssets(taskUuid);
+  const ranked = rankOrthophotoAssets(assets);
+  if (ranked.length > 0) {
+    return ranked;
+  }
+
+  return [
+    'odm_orthophoto/odm_orthophoto.tif',
+    'odm_orthophoto/odm_orthophoto.tiff',
+    'odm_orthophoto.tif',
+    'odm_orthophoto.tiff',
+    'orthophoto.tif',
+    'orthophoto.tiff',
+  ];
+}
+
+async function listTaskAssets(taskUuid: string): Promise<string[]> {
+  const assetsFromInfo = await fetchTaskAssetsFromInfo(taskUuid);
+  if (assetsFromInfo.length > 0) return assetsFromInfo;
+
+  try {
+    const res = await client.get(`/task/${taskUuid}/assets`);
+    return normalizeAssetList(res.data);
+  } catch {
+    return [];
+  }
+}
+
+async function fetchTaskAssetsFromInfo(taskUuid: string): Promise<string[]> {
+  try {
+    const res = await client.get(`/task/${taskUuid}/info`);
+    return normalizeAssetList(res.data);
+  } catch {
+    return [];
+  }
+}
+
+function normalizeAssetList(data: unknown): string[] {
+  if (!data || typeof data !== 'object') return [];
+  const maybeArray = (value: unknown): string[] =>
+    Array.isArray(value) ? value.map(item => String(item)) : [];
+  const maybeObjectKeys = (value: unknown): string[] => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+    return Object.keys(value as Record<string, unknown>);
+  };
+
+  const record = data as Record<string, unknown>;
+  const candidates = [
+    maybeArray(record.assets),
+    maybeObjectKeys(record.assets),
+    maybeArray(record.available_assets),
+    maybeObjectKeys(record.available_assets),
+    maybeArray(record.results),
+    Array.isArray(data) ? data.map(item => String(item)) : [],
+  ];
+
+  for (const candidate of candidates) {
+    if (candidate.length > 0) return candidate;
+  }
+  return [];
+}
+
+function rankOrthophotoAssets(assets: string[]): string[] {
+  const normalized = assets
+    .map(asset => String(asset))
+    .filter(asset => asset.trim().length > 0);
+
+  const scoreAsset = (asset: string): number => {
+    const lower = asset.toLowerCase();
+    let score = 0;
+    if (lower.includes('odm_orthophoto')) score += 3;
+    if (lower.includes('orthophoto')) score += 2;
+    if (lower.includes('ortho')) score += 1;
+    return score;
+  };
+
+  const orthoCandidates = normalized
+    .filter(asset => /ortho/i.test(asset) && /\.(tif|tiff)$/i.test(asset))
+    .sort((a, b) => scoreAsset(b) - scoreAsset(a));
+  if (orthoCandidates.length > 0) return orthoCandidates;
+
+  const tiffCandidates = normalized.filter(asset =>
+    /\.(tif|tiff)$/i.test(asset)
+  );
+  return tiffCandidates;
+}
+
+async function downloadTaskAsset(taskUuid: string, asset: string, outputPath: string): Promise<void> {
+  const encodedAsset = encodeAssetPath(asset);
+  const res = await client.get(`/task/${taskUuid}/download/${encodedAsset}`, {
+    responseType: 'stream',
+    timeout: 600000, // 10 minutes for download
+    validateStatus: status => status >= 200 && status < 500,
+  });
+
+  const contentType = String(res.headers['content-type'] || '');
+  const contentLength = Number(res.headers['content-length'] || 0);
+
+  if (res.status >= 400 || contentType.includes('application/json') || contentType.includes('text')) {
+    const body = await streamToString(res.data);
+    throw new Error(`NodeODM download error (${res.status}): ${body.trim()}`);
+  }
+
+  const tmpPath = `${outputPath}.tmp`;
+  await fsPromises.mkdir(path.dirname(outputPath), { recursive: true });
+  await pipeline(res.data, fs.createWriteStream(tmpPath));
+
+  const stats = await fsPromises.stat(tmpPath);
+  if (stats.size < 1024 || (contentLength > 0 && stats.size < Math.min(contentLength, 1024))) {
+    const body = await fsPromises.readFile(tmpPath, 'utf8').catch(() => '');
+    await fsPromises.unlink(tmpPath).catch(() => undefined);
+    throw new Error(`Downloaded asset "${asset}" is too small (${stats.size} bytes). ${body.trim()}`.trim());
+  }
+
+  await fsPromises.rename(tmpPath, outputPath);
+}
+
+function encodeAssetPath(asset: string): string {
+  return asset
+    .split('/')
+    .map(segment => encodeURIComponent(segment))
+    .join('/');
+}
+
+async function streamToString(stream: NodeJS.ReadableStream): Promise<string> {
+  const chunks: Buffer[] = [];
+  await new Promise<void>((resolve, reject) => {
+    stream.on('data', chunk => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+    stream.on('end', resolve);
+    stream.on('error', reject);
+  });
+  return Buffer.concat(chunks).toString('utf8');
 }
