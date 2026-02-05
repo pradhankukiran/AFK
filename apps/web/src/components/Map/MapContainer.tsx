@@ -272,15 +272,9 @@ export default function MapContainer({
       }
     });
 
-      const handleLoad = () => {
-        if (projectBounds) {
-          map.fitBounds(projectBounds, { padding: 40, maxZoom: tileBestZoom });
-        }
-      };
-      map.on('load', handleLoad);
-      if (map.loaded()) {
-        handleLoad();
-      }
+      map.on('load', () => {
+        // noop: camera is set when orthomosaic layer is ready
+      });
       mapRef.current = map;
       // Ensure dependent effects run even if load event was missed
       setMapReadyToken((token) => token + 1);
@@ -298,21 +292,7 @@ export default function MapContainer({
     };
   }, [baseStyleUrl, onShapeCreated, projectBounds, projectCenter, tileBestZoom]);
 
-  useEffect(() => {
-    if (!mapRef.current || !projectBounds) return;
-    const map = mapRef.current;
-    const onStyleLoad = () => {
-      map.off('style.load', onStyleLoad);
-      map.fitBounds(projectBounds, { padding: 40, maxZoom: tileBestZoom });
-    };
-    if (!map.isStyleLoaded()) {
-      map.on('style.load', onStyleLoad);
-      return () => {
-        map.off('style.load', onStyleLoad);
-      };
-    }
-    map.fitBounds(projectBounds, { padding: 40, maxZoom: tileBestZoom });
-  }, [projectBounds, tileBestZoom, mapReadyToken]);
+  // Intentionally avoid extra fitBounds here to prevent camera jumps.
 
   // Load orthomosaic tiles
   useEffect(() => {
@@ -384,8 +364,7 @@ export default function MapContainer({
 
         if (projectBounds) {
           map.fitBounds(projectBounds, { padding: 40, maxZoom: tileBestZoom });
-        }
-        if (projectCenter) {
+        } else if (projectCenter) {
           map.jumpTo({ center: projectCenter, zoom: tileBestZoom });
         }
 
