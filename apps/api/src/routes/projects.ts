@@ -53,6 +53,7 @@ router.get('/:id', async (req: Request, res: Response) => {
       if (tileZoomRange) {
         project.tile_min_zoom = tileZoomRange.min;
         project.tile_max_zoom = tileZoomRange.max;
+        project.tile_best_zoom = tileZoomRange.best;
       }
     }
 
@@ -63,7 +64,9 @@ router.get('/:id', async (req: Request, res: Response) => {
   }
 });
 
-async function getTileZoomRange(tilesDir: string): Promise<{ min: number; max: number } | null> {
+async function getTileZoomRange(
+  tilesDir: string
+): Promise<{ min: number; max: number; best: number } | null> {
   try {
     const entries = await fs.readdir(tilesDir, { withFileTypes: true });
     const zoomLevels = entries
@@ -74,12 +77,16 @@ async function getTileZoomRange(tilesDir: string): Promise<{ min: number; max: n
     if (zoomLevels.length === 0) return null;
 
     const validZooms: number[] = [];
+    let bestZoom = zoomLevels[0];
+    let bestSize = -1;
     const sizeThreshold = 2048;
 
     for (const zoom of zoomLevels) {
       const zoomDir = path.join(tilesDir, String(zoom));
       const xDirs = await fs.readdir(zoomDir, { withFileTypes: true });
       let hasData = false;
+
+      let maxSizeForZoom = -1;
 
       for (const xDir of xDirs) {
         if (!xDir.isDirectory()) continue;
@@ -90,6 +97,9 @@ async function getTileZoomRange(tilesDir: string): Promise<{ min: number; max: n
           if (!yFile.isFile() || !yFile.name.endsWith('.png')) continue;
           const filePath = path.join(xPath, yFile.name);
           const stats = await fs.stat(filePath);
+          if (stats.size > maxSizeForZoom) {
+            maxSizeForZoom = stats.size;
+          }
           if (stats.size > sizeThreshold) {
             hasData = true;
             break;
@@ -100,10 +110,14 @@ async function getTileZoomRange(tilesDir: string): Promise<{ min: number; max: n
       }
 
       if (hasData) validZooms.push(zoom);
+      if (maxSizeForZoom > bestSize) {
+        bestSize = maxSizeForZoom;
+        bestZoom = zoom;
+      }
     }
 
     if (validZooms.length === 0) return null;
-    return { min: validZooms[0], max: validZooms[validZooms.length - 1] };
+    return { min: validZooms[0], max: validZooms[validZooms.length - 1], best: bestZoom };
   } catch (error) {
     console.warn('Failed to determine tile zoom range:', error);
     return null;

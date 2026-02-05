@@ -32,6 +32,7 @@ export default function MapContainer({
   const defaultMaxZoom = Number(import.meta.env.VITE_TILE_MAX_ZOOM || 22);
   const tileMinZoom = project.tile_min_zoom ?? defaultMinZoom;
   const tileMaxZoom = project.tile_max_zoom ?? defaultMaxZoom;
+  const tileBestZoom = project.tile_best_zoom ?? tileMaxZoom;
   const projectBounds = useMemo<[[number, number], [number, number]] | null>(() => {
     if (!project.bounds) return null;
     const coords = project.bounds.coordinates[0];
@@ -255,7 +256,7 @@ export default function MapContainer({
 
     map.on('load', () => {
       if (projectBounds) {
-        map.fitBounds(projectBounds, { padding: 40, maxZoom: tileMaxZoom });
+        map.fitBounds(projectBounds, { padding: 40, maxZoom: tileBestZoom });
       }
       setMapLoaded(true);
     });
@@ -270,8 +271,8 @@ export default function MapContainer({
 
   useEffect(() => {
     if (!mapRef.current || !projectBounds) return;
-    mapRef.current.fitBounds(projectBounds, { padding: 40, maxZoom: tileMaxZoom });
-  }, [projectBounds, tileMaxZoom]);
+    mapRef.current.fitBounds(projectBounds, { padding: 40, maxZoom: tileBestZoom });
+  }, [projectBounds, tileBestZoom]);
 
   // Load orthomosaic tiles
   useEffect(() => {
@@ -333,9 +334,9 @@ export default function MapContainer({
     );
 
     if (projectBounds) {
-      map.fitBounds(projectBounds, { padding: 40, maxZoom: tileMaxZoom });
+      map.fitBounds(projectBounds, { padding: 40, maxZoom: tileBestZoom });
     }
-  }, [mapLoaded, project.id, project.orthomosaic_path, projectBounds]);
+  }, [mapLoaded, project.id, project.orthomosaic_path, projectBounds, tileBestZoom]);
 
   // Update annotations source/layers
   useEffect(() => {

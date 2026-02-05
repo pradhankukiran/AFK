@@ -8,6 +8,7 @@ export interface Project {
   bounds: GeoJSON.Polygon | null;
   tile_min_zoom?: number;
   tile_max_zoom?: number;
+  tile_best_zoom?: number;
   processing_started_at: string | null;
   processing_completed_at: string | null;
   error_message: string | null;
