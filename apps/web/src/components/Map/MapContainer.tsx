@@ -307,7 +307,9 @@ export default function MapContainer({
     };
     if (!map.isStyleLoaded()) {
       map.on('style.load', onStyleLoad);
-      return () => map.off('style.load', onStyleLoad);
+      return () => {
+        map.off('style.load', onStyleLoad);
+      };
     }
     map.fitBounds(projectBounds, { padding: 40, maxZoom: tileBestZoom });
   }, [projectBounds, tileBestZoom, mapReadyToken]);
@@ -472,7 +474,9 @@ export default function MapContainer({
 
     if (!map.isStyleLoaded()) {
       map.on('style.load', onStyleLoad);
-      return () => map.off('style.load', onStyleLoad);
+      return () => {
+        map.off('style.load', onStyleLoad);
+      };
     }
 
     addBoundsLayer();
@@ -624,7 +628,9 @@ export default function MapContainer({
 
     if (!map.isStyleLoaded()) {
       map.on('style.load', onStyleLoad);
-      return () => map.off('style.load', onStyleLoad);
+      return () => {
+        map.off('style.load', onStyleLoad);
+      };
     }
 
     addAnnotationsLayers();
