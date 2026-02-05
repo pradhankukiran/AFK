@@ -26,6 +26,10 @@ export default function MapContainer({
   const [mapLoaded, setMapLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const baseStyleUrl =
+    import.meta.env.VITE_BASEMAP_STYLE_URL || 'https://demotiles.maplibre.org/style.json';
+  const tileMinZoom = Number(import.meta.env.VITE_TILE_MIN_ZOOM || 14);
+  const tileMaxZoom = Number(import.meta.env.VITE_TILE_MAX_ZOOM || 22);
 
   const DrawRectangleMode = {
     ...MapboxDraw.modes.draw_polygon,
@@ -95,26 +99,9 @@ export default function MapContainer({
 
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
-      style: {
-        version: 8,
-        sources: {
-          osm: {
-            type: 'raster',
-            tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-            tileSize: 256,
-            attribution: '&copy; OpenStreetMap contributors',
-          },
-        },
-        layers: [
-          {
-            id: 'osm',
-            type: 'raster',
-            source: 'osm',
-          },
-        ],
-      },
-      center: [0, 0],
-      zoom: 2,
+      style: baseStyleUrl,
+      center: [78.9629, 20.5937],
+      zoom: 5,
     });
 
     map.addControl(new maplibregl.NavigationControl(), 'top-right');
@@ -206,13 +193,30 @@ export default function MapContainer({
     if (!project.orthomosaic_path) return;
 
     const tileUrl = `/outputs/${project.id}/tiles/{z}/{x}/{y}.png`;
-    map.addSource(sourceId, {
+    const source: maplibregl.RasterSourceSpecification = {
       type: 'raster',
       tiles: [tileUrl],
       tileSize: 256,
-      minzoom: 0,
-      maxzoom: 22,
-    });
+      minzoom: tileMinZoom,
+      maxzoom: tileMaxZoom,
+    };
+
+    if (project.bounds) {
+      const coords = project.bounds.coordinates[0];
+      const bounds = coords.reduce(
+        (acc, [lng, lat]) => {
+          acc[0] = Math.min(acc[0], lng);
+          acc[1] = Math.min(acc[1], lat);
+          acc[2] = Math.max(acc[2], lng);
+          acc[3] = Math.max(acc[3], lat);
+          return acc;
+        },
+        [Infinity, Infinity, -Infinity, -Infinity]
+      );
+      source.bounds = [bounds[0], bounds[1], bounds[2], bounds[3]];
+    }
+
+    map.addSource(sourceId, source);
 
     const beforeId = map.getLayer('annotations-fill') ? 'annotations-fill' : undefined;
     map.addLayer(
@@ -241,7 +245,7 @@ export default function MapContainer({
         [bounds[0], bounds[1]],
         [bounds[2], bounds[3]],
       ];
-      map.fitBounds(fitBounds, { padding: 40, maxZoom: 20 });
+      map.fitBounds(fitBounds, { padding: 40, maxZoom: tileMaxZoom });
     }
   }, [mapLoaded, project.id, project.orthomosaic_path, project.bounds]);
 
