@@ -190,7 +190,6 @@ export default function MapContainer({
       style: baseStyleUrl,
       center: [78.9629, 20.5937],
       zoom: 5,
-      ...(projectBounds ? { bounds: projectBounds, fitBoundsOptions: { padding: 40, maxZoom: tileMaxZoom } } : {}),
     });
 
     map.addControl(new maplibregl.NavigationControl(), 'top-right');
@@ -252,7 +251,12 @@ export default function MapContainer({
       }
     });
 
-    map.on('load', () => setMapLoaded(true));
+    map.on('load', () => {
+      if (projectBounds) {
+        map.fitBounds(projectBounds, { padding: 40, maxZoom: tileMaxZoom });
+      }
+      setMapLoaded(true);
+    });
     mapRef.current = map;
 
     return () => {
@@ -260,7 +264,12 @@ export default function MapContainer({
       mapRef.current = null;
       drawRef.current = null;
     };
-  }, [onShapeCreated]);
+  }, [onShapeCreated, projectBounds, tileMaxZoom]);
+
+  useEffect(() => {
+    if (!mapRef.current || !projectBounds) return;
+    mapRef.current.fitBounds(projectBounds, { padding: 40, maxZoom: tileMaxZoom });
+  }, [projectBounds, tileMaxZoom]);
 
   // Load orthomosaic tiles
   useEffect(() => {
