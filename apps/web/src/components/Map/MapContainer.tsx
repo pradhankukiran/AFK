@@ -93,6 +93,86 @@ export default function MapContainer({
     },
   } as unknown as MapboxDraw.DrawCustomMode<any, any>;
 
+  // MapLibre-compatible draw styles (fixes line-dasharray expression issue)
+  const drawStyles = [
+    {
+      id: 'gl-draw-polygon-fill-inactive',
+      type: 'fill',
+      filter: ['all', ['==', 'active', 'false'], ['==', '$type', 'Polygon'], ['!=', 'mode', 'static']],
+      paint: { 'fill-color': '#3bb2d0', 'fill-outline-color': '#3bb2d0', 'fill-opacity': 0.1 },
+    },
+    {
+      id: 'gl-draw-polygon-fill-active',
+      type: 'fill',
+      filter: ['all', ['==', 'active', 'true'], ['==', '$type', 'Polygon']],
+      paint: { 'fill-color': '#fbb03b', 'fill-outline-color': '#fbb03b', 'fill-opacity': 0.1 },
+    },
+    {
+      id: 'gl-draw-polygon-stroke-inactive',
+      type: 'line',
+      filter: ['all', ['==', 'active', 'false'], ['==', '$type', 'Polygon'], ['!=', 'mode', 'static']],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#3bb2d0', 'line-width': 2 },
+    },
+    {
+      id: 'gl-draw-polygon-stroke-active',
+      type: 'line',
+      filter: ['all', ['==', 'active', 'true'], ['==', '$type', 'Polygon']],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#fbb03b', 'line-width': 2 },
+    },
+    {
+      id: 'gl-draw-lines-inactive',
+      type: 'line',
+      filter: ['all', ['==', 'active', 'false'], ['==', '$type', 'LineString'], ['!=', 'mode', 'static']],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#3bb2d0', 'line-width': 2 },
+    },
+    {
+      id: 'gl-draw-lines-active',
+      type: 'line',
+      filter: ['all', ['==', '$type', 'LineString'], ['==', 'active', 'true']],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#fbb03b', 'line-width': 2 },
+    },
+    {
+      id: 'gl-draw-point-inactive',
+      type: 'circle',
+      filter: ['all', ['==', 'active', 'false'], ['==', '$type', 'Point'], ['==', 'meta', 'feature'], ['!=', 'mode', 'static']],
+      paint: { 'circle-radius': 5, 'circle-color': '#3bb2d0' },
+    },
+    {
+      id: 'gl-draw-point-active',
+      type: 'circle',
+      filter: ['all', ['==', '$type', 'Point'], ['==', 'active', 'true'], ['!=', 'meta', 'midpoint']],
+      paint: { 'circle-radius': 7, 'circle-color': '#fbb03b' },
+    },
+    {
+      id: 'gl-draw-polygon-midpoint',
+      type: 'circle',
+      filter: ['all', ['==', '$type', 'Point'], ['==', 'meta', 'midpoint']],
+      paint: { 'circle-radius': 3, 'circle-color': '#fbb03b' },
+    },
+    {
+      id: 'gl-draw-point-stroke-active',
+      type: 'circle',
+      filter: ['all', ['==', '$type', 'Point'], ['==', 'active', 'true'], ['!=', 'meta', 'midpoint']],
+      paint: { 'circle-radius': 9, 'circle-color': '#fff' },
+    },
+    {
+      id: 'gl-draw-polygon-and-line-vertex-inactive',
+      type: 'circle',
+      filter: ['all', ['==', 'meta', 'vertex'], ['==', '$type', 'Point'], ['!=', 'mode', 'static']],
+      paint: { 'circle-radius': 5, 'circle-color': '#fbb03b' },
+    },
+    {
+      id: 'gl-draw-polygon-and-line-vertex-stroke-inactive',
+      type: 'circle',
+      filter: ['all', ['==', 'meta', 'vertex'], ['==', '$type', 'Point'], ['!=', 'mode', 'static']],
+      paint: { 'circle-radius': 7, 'circle-color': '#fff' },
+    },
+  ];
+
   // Initialize map
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
@@ -118,6 +198,7 @@ export default function MapContainer({
         point: true,
         trash: false,
       },
+      styles: drawStyles,
     });
 
     map.addControl(draw as unknown as maplibregl.IControl, 'top-right');
@@ -177,6 +258,18 @@ export default function MapContainer({
     if (!mapLoaded || !mapRef.current) return;
 
     const map = mapRef.current;
+
+    // Ensure style is fully loaded before adding sources/layers
+    if (!map.isStyleLoaded()) {
+      const onStyleLoad = () => {
+        map.off('style.load', onStyleLoad);
+        // Trigger re-run by forcing a state update
+        setMapLoaded(false);
+        setTimeout(() => setMapLoaded(true), 0);
+      };
+      map.on('style.load', onStyleLoad);
+      return;
+    }
     const sourceId = 'orthomosaic';
     const layerId = 'orthomosaic-layer';
 
@@ -224,6 +317,8 @@ export default function MapContainer({
         id: layerId,
         type: 'raster',
         source: sourceId,
+        minzoom: tileMinZoom,
+        maxzoom: tileMaxZoom,
       },
       beforeId
     );
@@ -254,6 +349,12 @@ export default function MapContainer({
     if (!mapLoaded || !mapRef.current) return;
 
     const map = mapRef.current;
+
+    // Ensure style is fully loaded before adding sources/layers
+    if (!map.isStyleLoaded()) {
+      return; // Will re-run when mapLoaded cycles
+    }
+
     const sourceId = 'annotations';
 
     annotationsRef.current = annotations;
@@ -282,7 +383,7 @@ export default function MapContainer({
         id: 'annotations-fill',
         type: 'fill',
         source: sourceId,
-        filter: ['any', ['==', '$type', 'Polygon'], ['==', '$type', 'MultiPolygon']],
+        filter: ['==', '$type', 'Polygon'],
         paint: {
           'fill-color': ['match', ['get', 'category'],
             'disease', '#ef4444',
@@ -299,7 +400,7 @@ export default function MapContainer({
         id: 'annotations-outline',
         type: 'line',
         source: sourceId,
-        filter: ['any', ['==', '$type', 'Polygon'], ['==', '$type', 'MultiPolygon']],
+        filter: ['==', '$type', 'Polygon'],
         paint: {
           'line-color': ['match', ['get', 'category'],
             'disease', '#ef4444',
