@@ -45,7 +45,11 @@ router.get('/:id', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Project not found' });
     }
 
-    const project = result.rows[0] as Project & { tile_min_zoom?: number; tile_max_zoom?: number };
+    const project = result.rows[0] as Project & {
+      tile_min_zoom?: number;
+      tile_max_zoom?: number;
+      tile_best_zoom?: number;
+    };
 
     if (project.status === 'ready') {
       const tilesDir = path.join(config.outputsDir, project.id, 'tiles');
