@@ -350,9 +350,17 @@ export default function MapContainer({
         source: sourceId,
         minzoom: tileMinZoom,
         maxzoom: tileMaxZoom,
+        paint: {
+          'raster-opacity': 1,
+          'raster-fade-duration': 0,
+          'raster-resampling': 'nearest',
+        },
       },
       beforeId
     );
+    if (!beforeId) {
+      map.moveLayer(layerId);
+    }
 
     if (projectBounds) {
       map.fitBounds(projectBounds, { padding: 40, maxZoom: tileBestZoom });
