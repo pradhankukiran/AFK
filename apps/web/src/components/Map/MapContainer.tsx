@@ -331,7 +331,16 @@ export default function MapContainer({
         tileSize: 256,
         minzoom: tileMinZoom,
         maxzoom: tileMaxZoom,
-        ...(projectBounds ? { bounds: projectBounds } : {}),
+        ...(projectBounds
+          ? {
+              bounds: [
+                projectBounds[0][0],
+                projectBounds[0][1],
+                projectBounds[1][0],
+                projectBounds[1][1],
+              ],
+            }
+          : {}),
       };
 
       map.addSource(sourceId, source);
