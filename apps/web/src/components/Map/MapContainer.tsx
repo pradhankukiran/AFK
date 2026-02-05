@@ -30,7 +30,7 @@ export default function MapContainer({
     import.meta.env.VITE_BASEMAP_STYLE_URL || 'https://demotiles.maplibre.org/style.json';
   const tileMinZoom = Number(import.meta.env.VITE_TILE_MIN_ZOOM || 14);
   const tileMaxZoom = Number(import.meta.env.VITE_TILE_MAX_ZOOM || 22);
-  const projectBounds = useMemo<LngLatBoundsLike | null>(() => {
+  const projectBounds = useMemo<[[number, number], [number, number]] | null>(() => {
     if (!project.bounds) return null;
     const coords = project.bounds.coordinates[0];
     const bounds = coords.reduce(
