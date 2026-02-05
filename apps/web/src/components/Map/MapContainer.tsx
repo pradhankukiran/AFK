@@ -23,6 +23,8 @@ export default function MapContainer({
   const drawRef = useRef<MapboxDraw | null>(null);
   const annotationsRef = useRef<Annotation[]>([]);
   const onAnnotationClickRef = useRef<(annotation: Annotation) => void>(() => {});
+  const onShapeCreatedRef = useRef<(geometry: GeoJSON.Geometry) => void>(() => {});
+  onShapeCreatedRef.current = onShapeCreated;
   const [mapReadyToken, setMapReadyToken] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -248,7 +250,9 @@ export default function MapContainer({
             button.type = 'button';
             button.className = 'maplibregl-ctrl-icon';
             button.title = 'Draw rectangle';
-            button.innerHTML = '&#9633;';
+            button.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="4" y="5" width="12" height="10" rx="0.5" />
+            </svg>`;
             button.onclick = () => {
               draw.changeMode('draw_rectangle');
             };
@@ -267,7 +271,7 @@ export default function MapContainer({
         map.on('draw.create', (e) => {
           const feature = e.features?.[0];
           if (feature?.geometry) {
-            onShapeCreated(feature.geometry as GeoJSON.Geometry);
+            onShapeCreatedRef.current(feature.geometry as GeoJSON.Geometry);
             if (feature.id) {
               draw.delete(feature.id);
             }
@@ -299,7 +303,7 @@ export default function MapContainer({
       mapRef.current = null;
       drawRef.current = null;
     };
-  }, [baseStyleUrl, onShapeCreated, projectBounds, projectCenter, tileBestZoom]);
+  }, [baseStyleUrl, projectBounds, projectCenter, tileBestZoom]);
 
   // Intentionally avoid extra fitBounds here to prevent camera jumps.
 
