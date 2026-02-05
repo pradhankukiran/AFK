@@ -18,12 +18,14 @@ COPY . .
 RUN pnpm build
 
 # Production stage
-FROM node:20-alpine
+FROM node:20-bookworm-slim
 
 WORKDIR /app
 
-# Install GDAL tools for tile generation
-RUN apk add --no-cache gdal gdal-tools python3
+# Install GDAL tools for tile generation (includes PNG driver)
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends gdal-bin python3 \
+  && rm -rf /var/lib/apt/lists/*
 
 # Install pnpm
 RUN corepack enable && corepack prepare pnpm@latest --activate
