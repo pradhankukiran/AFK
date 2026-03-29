@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.icons8.com/color/96/drone.png" alt="AFK Logo" width="80" />
+  <img src=".github/logo.svg" alt="AFK Logo" width="80" />
 </p>
 
 <h1 align="center">AFK <sup><em>(AgriFieldKinematic)</em></sup></h1>
